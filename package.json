@@ -1,0 +1,15 @@
+{
+  "name": "smartjer-chess-relay",
+  "version": "1.0.0",
+  "description": "SmartJER Chess Multiplayer WebSocket Relay Server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "ws": "^8.21.3"
+  }
+}
