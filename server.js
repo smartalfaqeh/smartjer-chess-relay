@@ -41,13 +41,13 @@ function sendTo(playerId, data) {
     if (p && p.ws.readyState === WebSocket.OPEN) p.ws.send(JSON.stringify(data));
 }
 
-async function reportGameResult(gameId, winnerId, loserId, isDraw) {
+async function reportGameResult(gameId, winnerId, loserId, isDraw, moveLog) {
     if (!SMARTJER_WEBHOOK_URL) return;
     try {
         await fetch(SMARTJER_WEBHOOK_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-webhook-secret': SMARTJER_WEBHOOK_SECRET },
-            body: JSON.stringify({ game_id: gameId, winner_player_id: winnerId, loser_player_id: loserId, is_draw: isDraw }),
+            body: JSON.stringify({ game_id: gameId, winner_player_id: winnerId, loser_player_id: loserId, is_draw: isDraw, move_log: moveLog || [] }),
         });
     } catch (e) {
         console.error('Gagal hantar webhook hasil permainan:', e.message);
@@ -137,7 +137,7 @@ wss.on('connection', (ws) => {
             if (!game) return;
             const opponentId = game.player1Id === myPlayerId ? game.player2Id : game.player1Id;
             sendTo(opponentId, { type: 'opponent_game_over', result: 'win' });
-            reportGameResult(msg.gameId, opponentId, myPlayerId, false);
+            reportGameResult(msg.gameId, opponentId, myPlayerId, false, msg.moveLog);
             if (players.has(myPlayerId)) players.get(myPlayerId).status = 'online';
             if (players.has(opponentId)) players.get(opponentId).status = 'online';
             games.delete(msg.gameId);
@@ -154,9 +154,9 @@ wss.on('connection', (ws) => {
             if (msg.result !== 'draw') {
                 const winnerId = msg.result === 'win' ? myPlayerId : opponentId;
                 const loserId = msg.result === 'win' ? opponentId : myPlayerId;
-                reportGameResult(msg.gameId, winnerId, loserId, false);
+                reportGameResult(msg.gameId, winnerId, loserId, false, msg.moveLog);
             } else {
-                reportGameResult(msg.gameId, myPlayerId, opponentId, true);
+                reportGameResult(msg.gameId, myPlayerId, opponentId, true, msg.moveLog);
             }
 
             if (players.has(myPlayerId)) players.get(myPlayerId).status = 'online';
