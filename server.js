@@ -73,7 +73,7 @@ wss.on('connection', (ws) => {
         if (msg.type === 'challenge') {
             const target = players.get(msg.targetPlayerId);
             if (target && target.status === 'online') {
-                sendTo(msg.targetPlayerId, { type: 'challenge_received', fromPlayerId: myPlayerId, fromName: players.get(myPlayerId).name });
+                sendTo(msg.targetPlayerId, { type: 'challenge_received', fromPlayerId: myPlayerId, fromName: players.get(myPlayerId).name, timeControlSeconds: msg.timeControlSeconds || 600 });
             }
             return;
         }
@@ -83,11 +83,12 @@ wss.on('connection', (ws) => {
                 const gameId = 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
                 const p1 = msg.fromPlayerId, p2 = myPlayerId;
                 const p1IsWhite = Math.random() < 0.5;
-                games.set(gameId, { player1Id: p1, player2Id: p2, player1Color: p1IsWhite ? 'w' : 'b' });
+                const timeControlSeconds = msg.timeControlSeconds || 600;
+                games.set(gameId, { player1Id: p1, player2Id: p2, player1Color: p1IsWhite ? 'w' : 'b', timeControlSeconds });
                 players.get(p1).status = 'in_game';
                 players.get(p2).status = 'in_game';
-                sendTo(p1, { type: 'game_start', gameId, opponent: { name: players.get(p2).name, rating: players.get(p2).rating }, yourColor: p1IsWhite ? 'w' : 'b' });
-                sendTo(p2, { type: 'game_start', gameId, opponent: { name: players.get(p1).name, rating: players.get(p1).rating }, yourColor: p1IsWhite ? 'b' : 'w' });
+                sendTo(p1, { type: 'game_start', gameId, opponent: { name: players.get(p2).name, rating: players.get(p2).rating }, yourColor: p1IsWhite ? 'w' : 'b', timeControlSeconds });
+                sendTo(p2, { type: 'game_start', gameId, opponent: { name: players.get(p1).name, rating: players.get(p1).rating }, yourColor: p1IsWhite ? 'b' : 'w', timeControlSeconds });
                 broadcastOnlineList();
             } else {
                 sendTo(msg.fromPlayerId, { type: 'challenge_declined', byName: players.get(myPlayerId).name });
@@ -97,26 +98,27 @@ wss.on('connection', (ws) => {
 
         if (msg.type === 'create_invite') {
             const code = Math.random().toString(36).slice(2, 8).toUpperCase();
-            invites.set(code, myPlayerId);
+            invites.set(code, { hostId: myPlayerId, timeControlSeconds: msg.timeControlSeconds || 600 });
             sendTo(myPlayerId, { type: 'invite_code', code });
             return;
         }
 
         if (msg.type === 'join_invite') {
-            const hostId = invites.get(msg.code);
-            if (!hostId || !players.has(hostId) || hostId === myPlayerId) {
+            const invite = invites.get(msg.code);
+            if (!invite || !players.has(invite.hostId) || invite.hostId === myPlayerId) {
                 sendTo(myPlayerId, { type: 'invite_error', message: 'Kod tidak sah atau anda cuba sertai permainan sendiri.' });
                 return;
             }
             invites.delete(msg.code);
             const gameId = 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-            const p1 = hostId, p2 = myPlayerId;
+            const p1 = invite.hostId, p2 = myPlayerId;
             const p1IsWhite = Math.random() < 0.5;
-            games.set(gameId, { player1Id: p1, player2Id: p2, player1Color: p1IsWhite ? 'w' : 'b' });
+            const timeControlSeconds = invite.timeControlSeconds;
+            games.set(gameId, { player1Id: p1, player2Id: p2, player1Color: p1IsWhite ? 'w' : 'b', timeControlSeconds });
             players.get(p1).status = 'in_game';
             players.get(p2).status = 'in_game';
-            sendTo(p1, { type: 'game_start', gameId, opponent: { name: players.get(p2).name, rating: players.get(p2).rating }, yourColor: p1IsWhite ? 'w' : 'b' });
-            sendTo(p2, { type: 'game_start', gameId, opponent: { name: players.get(p1).name, rating: players.get(p1).rating }, yourColor: p1IsWhite ? 'b' : 'w' });
+            sendTo(p1, { type: 'game_start', gameId, opponent: { name: players.get(p2).name, rating: players.get(p2).rating }, yourColor: p1IsWhite ? 'w' : 'b', timeControlSeconds });
+            sendTo(p2, { type: 'game_start', gameId, opponent: { name: players.get(p1).name, rating: players.get(p1).rating }, yourColor: p1IsWhite ? 'b' : 'w', timeControlSeconds });
             broadcastOnlineList();
             return;
         }
@@ -125,7 +127,21 @@ wss.on('connection', (ws) => {
             const game = games.get(msg.gameId);
             if (!game) return;
             const opponentId = game.player1Id === myPlayerId ? game.player2Id : game.player1Id;
-            sendTo(opponentId, { type: 'opponent_move', from: msg.from, to: msg.to, promotion: msg.promotion });
+            sendTo(opponentId, { type: 'opponent_move', from: msg.from, to: msg.to, promotion: msg.promotion, remainingMs: msg.remainingMs });
+            return;
+        }
+
+        if (msg.type === 'timeout') {
+            // Pemain yang hantar mesej ni ialah yang KEHABISAN masa (kalah)
+            const game = games.get(msg.gameId);
+            if (!game) return;
+            const opponentId = game.player1Id === myPlayerId ? game.player2Id : game.player1Id;
+            sendTo(opponentId, { type: 'opponent_game_over', result: 'win' });
+            reportGameResult(msg.gameId, opponentId, myPlayerId, false);
+            if (players.has(myPlayerId)) players.get(myPlayerId).status = 'online';
+            if (players.has(opponentId)) players.get(opponentId).status = 'online';
+            games.delete(msg.gameId);
+            broadcastOnlineList();
             return;
         }
 
