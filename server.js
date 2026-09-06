@@ -47,9 +47,12 @@ function colorOf(game, playerId) {
 }
 
 async function reportGameResult(gameId, winnerId, loserId, isDraw, moveLog, tournamentId, matchId) {
-    if (!SMARTJER_WEBHOOK_URL) return;
+    if (!SMARTJER_WEBHOOK_URL) {
+        console.error('❌ SMARTJER_WEBHOOK_URL TIDAK DITETAPKAN - hasil permainan TIDAK dihantar ke SmartJER!');
+        return;
+    }
     try {
-        await fetch(SMARTJER_WEBHOOK_URL, {
+        const res = await fetch(SMARTJER_WEBHOOK_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-webhook-secret': SMARTJER_WEBHOOK_SECRET },
             body: JSON.stringify({
@@ -57,8 +60,14 @@ async function reportGameResult(gameId, winnerId, loserId, isDraw, moveLog, tour
                 move_log: moveLog || [], tournament_id: tournamentId || null, match_id: matchId || null,
             }),
         });
+        if (!res.ok) {
+            const body = await res.text().catch(() => '(tak dapat baca respons)');
+            console.error(`❌ Webhook GAGAL (status ${res.status}) untuk game ${gameId}: ${body}`);
+        } else {
+            console.log(`✅ Webhook berjaya untuk game ${gameId}`);
+        }
     } catch (e) {
-        console.error('Gagal hantar webhook hasil permainan:', e.message);
+        console.error('❌ Gagal hantar webhook hasil permainan (ralat rangkaian):', e.message);
     }
 }
 
